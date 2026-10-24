@@ -1,0 +1,30 @@
+{
+  "version": "0.2",
+  "language": "en-GB,en",
+  "ignoreRegExpList": ["/```[\\s\\S]*?```/g", "/`[^`]+`/g"],
+  "words": [
+    "apns",
+    "arentz",
+    "conffile",
+    "conffiles",
+    "doveconf",
+    "dovecot",
+    "freswa",
+    "keyid",
+    "lmtp",
+    "maintainer",
+    "maintainers",
+    "mkdocs",
+    "pem",
+    "prek",
+    "readthedocs",
+    "schwan",
+    "stefan",
+    "synchronise",
+    "timlaing",
+    "userdb",
+    "xapplepushservice",
+    "xaps",
+    "xapsd"
+  ]
+}

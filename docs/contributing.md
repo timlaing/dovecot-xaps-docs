@@ -46,3 +46,29 @@ Open the Read the Docs check on the PR and follow its preview link. Confirm that
 contains the proposed text, internal links resolve within that preview, and the site search
 finds an affected topic. Use the preview notification to distinguish the PR from the published guide.
 After merging, check that the same change appears in `latest`.
+
+## Maintenance checks
+
+Install Node.js 24 and run `npm ci`, then `npm run lint`. This checks formatting, Markdown,
+and spelling. Use `npm run format` to format files. Add project-specific dictionary words in
+lowercase and alphabetical order. Internal links are checked by the strict MkDocs build;
+the separate External links workflow runs weekly and can be started manually.
+
+Install `requirements-dev.txt` to obtain the pinned dependency compiler. Update the direct
+requirements in `requirements.in`, then regenerate the lock file with Python 3.14:
+
+```sh
+python -m pip install -r requirements-dev.txt
+pip-compile --upgrade --strip-extras --output-file requirements.txt requirements.in
+python -m pip install -r requirements.txt
+mkdocs build --strict
+```
+
+Commit the input and generated requirements together. Dependabot checks Python, npm, and
+GitHub Actions dependencies weekly. Review its compiled requirements updates and regenerate
+the lock file when needed; do not merge dependency PRs with failing builds or previews.
+The lock file pins runtime dependencies; the compiler is a development-only dependency.
+
+The main branch requires PRs, resolved review conversations, the Build and Lint checks, and
+the Read the Docs preview check. CODEOWNERS routes reviews to @timlaing. The wiki is disabled
+so maintained documentation stays in this repository.

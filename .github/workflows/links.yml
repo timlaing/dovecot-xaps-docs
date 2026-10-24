@@ -1,0 +1,22 @@
+name: External links
+on:
+  schedule:
+    - cron: "23 8 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: external-links
+  cancel-in-progress: true
+jobs:
+  links:
+    name: Check external links
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: lycheeverse/lychee-action@v2.9.0
+        with:
+          args: --no-progress --max-retries 3 --retry-wait-time 5 --timeout 30 --include-verbatim "docs/**/*.md" README.md
+          fail: true

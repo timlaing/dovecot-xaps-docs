@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Plugin support
+    url: https://github.com/timlaing/dovecot-xaps-plugin/issues
+    about: Report Dovecot plugin bugs here.
+  - name: Daemon support
+    url: https://github.com/timlaing/dovecot-xaps-daemon/issues
+    about: Report xapsd and APNS delivery bugs here.
+  - name: APT repository support
+    url: https://github.com/timlaing/dovecot-xaps-apt/issues
+    about: Report package index and signing problems here.
