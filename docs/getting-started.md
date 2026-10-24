@@ -57,7 +57,9 @@ adding this repository alone does not configure unattended upgrades.
 
 ## Configure and start
 
-The daemon installer prompts for the APNS topic, key ID, and team ID, and derives
+Install interactively so the daemon installer can prompt for the APNS topic, key ID, and team ID.
+For unattended installation, preseed the `xapsd/key-file-topic`, `xapsd/key-file-key-id`, and
+`xapsd/key-file-team-id` debconf answers; empty values are rejected. The installer derives
 `AuthKey_<KeyID>.p8`. Copy your private key into place, replacing `<KeyID>` with the actual ID:
 
 ```sh

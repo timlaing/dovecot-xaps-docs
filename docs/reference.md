@@ -31,3 +31,20 @@ The package targets are Ubuntu 26.04 with Dovecot 2.4.2 or later in the 2.4 seri
 with Dovecot 2.3. A documentation build checks rendering and internal links. It does not install
 packages, establish ABI compatibility, validate administrator configuration, or verify Apple delivery.
 Record installation and real-device checks separately when updating this guide.
+
+## Installation verification on 24 October 2026
+
+| Environment                         | Packages                              | Result |
+| ----------------------------------- | ------------------------------------- | ------ |
+| Ubuntu 26.04, arm64, Dovecot 2.4.2  | Plugin `1.1.1-1`, xapsd `1.4.1`       | Pass   |
+| Ubuntu 24.04, arm64, Dovecot 2.3.21 | Plugin `1.1.1-1~dov23`, xapsd `1.4.1` | Pass   |
+
+Each check used a fresh disposable official Ubuntu container, verified the repository key fingerprint,
+updated APT through the signed repository, installed both packages, and ran `doveconf -n` successfully.
+The noninteractive installer was supplied clearly synthetic APNS topic, key ID, and team ID values
+through debconf. Empty noninteractive answers are rejected by the daemon installer; interactive users
+must provide their own valid values when prompted.
+
+These checks did not start a complete systemd mail server, exercise upgrades, test amd64 packages,
+or send APNS notifications. Service startup and physical iOS delivery remain not run. A physical-device
+test requires a configured mail server, suitable credentials, and an iOS Mail account.
