@@ -1,0 +1,30 @@
+name: Documentation problem
+description: Report an incorrect instruction, missing detail, or broken link.
+labels: [documentation]
+body:
+  - type: input
+    id: page
+    attributes:
+      label: Documentation page
+      description: Paste the page URL, including the version or preview if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What needs correcting?
+      description: Explain what you expected and what happened. Redact private data.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, architecture, Dovecot version, and plugin/daemon versions, if relevant.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: I have removed credentials, device tokens, account/email data, and private server details.
+          required: true

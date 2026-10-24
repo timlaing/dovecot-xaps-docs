@@ -1,0 +1,16 @@
+name: Documentation improvement
+description: Suggest a guide, example, or explanation.
+labels: [documentation]
+body:
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What should the documentation explain?
+    validations:
+      required: true
+  - type: textarea
+    id: audience
+    attributes:
+      label: Who would this help, and why?
+    validations:
+      required: true
