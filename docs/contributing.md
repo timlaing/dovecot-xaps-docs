@@ -18,7 +18,7 @@ mkdocs build --strict
 mkdocs serve
 ```
 
-Check navigation, search, code copying, and long command wrapping at phone, tablet, and desktop widths.
+Check navigation, search, and long command wrapping at phone, tablet, and desktop widths.
 Use synthetic examples. Never commit credentials, registration data, or private server information.
 The GitHub Docs check runs a strict build; Read the Docs provides the hosted PR preview.
 
@@ -39,3 +39,10 @@ Do not add a global site redirect to a version-specific preview host.
 
 See the official [MkDocs integration](https://docs.readthedocs.com/platform/stable/intro/mkdocs.html)
 and [PR preview setup](https://docs.readthedocs.com/platform/stable/guides/pull-requests.html).
+
+## Review a documentation preview
+
+Open the Read the Docs check on the PR and follow its preview link. Confirm that the preview
+contains the proposed text, internal links resolve within that preview, and the site search
+finds an affected topic. Use the preview notification to distinguish the PR from the published guide.
+After merging, check that the same change appears in `latest`.
