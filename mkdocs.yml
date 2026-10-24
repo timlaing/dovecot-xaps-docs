@@ -1,0 +1,35 @@
+site_name: Dovecot XAPS
+site_description: Apple push email for Dovecot — installation, configuration, and operations.
+site_url:
+  !ENV [
+    READTHEDOCS_CANONICAL_URL,
+    "https://dovecot-xaps.readthedocs.io/en/latest/",
+  ]
+repo_url: https://github.com/timlaing/dovecot-xaps-docs
+repo_name: timlaing/dovecot-xaps-docs
+edit_uri: edit/main/docs/
+strict: true
+theme:
+  name: readthedocs
+plugins:
+  - search
+markdown_extensions:
+  - admonition
+  - fenced_code
+  - tables
+validation:
+  links:
+    not_found: warn
+    anchors: warn
+    unrecognized_links: warn
+nav:
+  - Overview: index.md
+  - Getting started: getting-started.md
+  - Configuration:
+      - Dovecot: configuration/dovecot.md
+      - Daemon: configuration/daemon.md
+  - Operations: operations.md
+  - Troubleshooting: troubleshooting.md
+  - Reference: reference.md
+  - Contributing: contributing.md
+  - Attribution: attribution.md
