@@ -1,7 +1,5 @@
 name: External links
 on:
-  schedule:
-    - cron: "23 8 * * 1"
   workflow_dispatch:
 permissions:
   contents: read

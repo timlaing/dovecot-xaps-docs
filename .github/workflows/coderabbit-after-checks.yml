@@ -5,8 +5,6 @@ on:
     workflows:
       ["CodeQL", "Dependabot Auto Merge", "Docs", "External links", "Lint"]
     types: [completed]
-  schedule:
-    - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
 
 permissions: {}
