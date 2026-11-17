@@ -18,4 +18,6 @@ After merging, run `python3 .github/scripts/apply-workflow-policy.py` to inspect
 
 For unattended explicit CodeRabbit requests, configure `REVIEW_REQUEST_TOKEN` as a dedicated maintainer-owned fine-grained token with Issues write, Pull requests read and Metadata read, limited to this repository. The trusted metadata-only coordinator uses that client only to identify the requester and post the fixed review command. Its normal GitHub Actions client retains check/status duties and has no PR/issue write permission. The workflow does not check out repository code. Request markers are deduplicated per authenticated requester and revision.
 
-Without the secret, automatic CodeRabbit reviews may still run where the provider permits them; otherwise a maintainer must request review. The gate never treats a missing request credential as approval. Rotate the token before expiry.
+Without the secret, automatic reviews are disabled to preserve validation ordering; a maintainer must request review after checks pass. The gate never treats a missing request credential as approval. Rotate the token before expiry.
+
+The migration accepts only an explicit main-only ruleset; shared or wildcard branch targets require a separate main policy. Review event notifications contain no checkout or credentials and trigger trusted re-evaluation of readiness and revoked approvals. Polling is bounded to 45 one-minute attempts.

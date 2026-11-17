@@ -39,8 +39,14 @@ class MigrationTests(unittest.TestCase):
             "rules": [
                 {"type": "deletion"},
                 {"type": "non_fast_forward"},
-                {"type": "pull_request", "parameters": {"required_approving_review_count": 1}},
-                {"type": "required_status_checks", "parameters": {"required_status_checks": []}},
+                {
+                    "type": "pull_request",
+                    "parameters": {"required_approving_review_count": 1},
+                },
+                {
+                    "type": "required_status_checks",
+                    "parameters": {"required_status_checks": []},
+                },
             ],
         }
         calls: list[str] = []
@@ -73,7 +79,9 @@ class MigrationTests(unittest.TestCase):
             {"context": "Validate ci", "integration_id": 15368},
             {"context": "Review passed", "integration_id": 15368},
         ]
-        self.assertEqual(payload["rules"][-1]["parameters"]["required_status_checks"], expected)
+        self.assertEqual(
+            payload["rules"][-1]["parameters"]["required_status_checks"], expected
+        )
         self.assertEqual(len(calls), 2)
 
     def test_apply_rejects_a_policy_not_yet_on_main(self) -> None:
@@ -84,12 +92,16 @@ class MigrationTests(unittest.TestCase):
             del body
             self.assertEqual(method, "GET")
             calls.append(path)
-            return {"content": base64.b64encode(b'{"required_checks":["old"]}').decode()}
+            return {
+                "content": base64.b64encode(b'{"required_checks":["old"]}').decode()
+            }
 
         with (
             patch.object(sys, "argv", [__file__, "--apply"]),
             patch.object(POLICY, "api", side_effect=api),
-            patch.object(Path, "read_text", return_value='{"required_checks":["Review passed"]}'),
+            patch.object(
+                Path, "read_text", return_value='{"required_checks":["Review passed"]}'
+            ),
             self.assertRaisesRegex(SystemExit, "merged into main first"),
         ):
             POLICY.main()
@@ -116,7 +128,9 @@ class ApplyTests(unittest.TestCase):
         def api(path: str, method: str = "GET", body: object = None) -> object:
             calls.append((path, method, body))
             if path.startswith("contents/"):
-                return {"content": base64.b64encode(json.dumps(policy).encode()).decode()}
+                return {
+                    "content": base64.b64encode(json.dumps(policy).encode()).decode()
+                }
             if path.startswith("rulesets?"):
                 return [
                     {"id": 2, "source_type": "Organization", "enforcement": "active"},
@@ -130,6 +144,8 @@ class ApplyTests(unittest.TestCase):
                 if mismatch == "checks" and len(calls) > 5:
                     result["rules"][-1]["parameters"]["required_status_checks"] = []
                 return result
+            if path == "actions/permissions/workflow":
+                return {"can_approve_pull_request_reviews": False}
             if path == POLICY.ACTIONS_PERMISSIONS:
                 return {
                     "enabled": True,
@@ -153,12 +169,29 @@ class ApplyTests(unittest.TestCase):
         """All intended settings and replacement workflows are enabled together."""
         calls = self.exercise_apply()
         payload = next(
-            body for path, method, body in calls if path == "rulesets/1" and method == "PUT"
+            body
+            for path, method, body in calls
+            if path == "rulesets/1" and method == "PUT"
         )
         self.assertEqual(payload["rules"][0], {"type": "deletion"})
         self.assertIn(("automated-security-fixes", "PUT", None), calls)
-        self.assertIn(("actions/workflows/coderabbit-after-checks.yml/enable", "PUT", None), calls)
-        self.assertIn(("actions/workflows/dependabot-auto-merge.yml/enable", "PUT", None), calls)
+        self.assertIn(
+            (
+                "actions/permissions/workflow",
+                "PUT",
+                {
+                    "default_workflow_permissions": "read",
+                    "can_approve_pull_request_reviews": False,
+                },
+            ),
+            calls,
+        )
+        self.assertIn(
+            ("actions/workflows/coderabbit-after-checks.yml/enable", "PUT", None), calls
+        )
+        self.assertIn(
+            ("actions/workflows/dependabot-auto-merge.yml/enable", "PUT", None), calls
+        )
 
     def test_apply_rejects_failed_settings_verification(self) -> None:
         """An API accepting writes does not establish that the policy took effect."""
@@ -186,8 +219,12 @@ class ApplyTests(unittest.TestCase):
             patch.object(POLICY.shutil, "which", return_value="/usr/bin/gh"),
             patch.object(POLICY.subprocess, "run", return_value=response) as transport,
         ):
-            self.assertEqual(POLICY.api("", "PATCH", {"allow_auto_merge": True}), {"ok": True})
-            self.assertEqual(transport.call_args.kwargs["input"], '{"allow_auto_merge": true}')
+            self.assertEqual(
+                POLICY.api("", "PATCH", {"allow_auto_merge": True}), {"ok": True}
+            )
+            self.assertEqual(
+                transport.call_args.kwargs["input"], '{"allow_auto_merge": true}'
+            )
             response.stdout = ""
             self.assertIsNone(POLICY.api("automated-security-fixes", "PUT"))
 
@@ -203,15 +240,27 @@ class SelectionTests(unittest.TestCase):
             "~ALL",
             "refs/heads/m*",
             "refs/heads/*",
+            "refs/heads/**/main",
         ]:
             ruleset = {
                 "target": "branch",
-                "conditions": {"ref_name": {"include": ["~ALL"], "exclude": [excluded]}},
+                "conditions": {
+                    "ref_name": {"include": ["refs/heads/main"], "exclude": [excluded]}
+                },
             }
             with self.subTest(excluded=excluded):
                 self.assertFalse(POLICY.applies_to_main(ruleset))
         ruleset["conditions"]["ref_name"]["exclude"] = ["refs/heads/release/*"]
         self.assertTrue(POLICY.applies_to_main(ruleset))
+        ruleset["conditions"]["ref_name"]["exclude"] = ["refs/*main"]
+        self.assertTrue(POLICY.applies_to_main(ruleset))
+        for included in [
+            ["~ALL"],
+            ["refs/heads/m*"],
+            ["refs/heads/main", "refs/heads/release/*"],
+        ]:
+            ruleset["conditions"]["ref_name"] = {"include": included, "exclude": []}
+            self.assertFalse(POLICY.applies_to_main(ruleset))
 
     def test_selects_applicable_ruleset_instead_of_excluded_one(self) -> None:
         """Ignore an earlier active ruleset even when it has check requirements."""
@@ -219,13 +268,17 @@ class SelectionTests(unittest.TestCase):
             "rulesets/1": {
                 "id": 1,
                 "target": "branch",
-                "conditions": {"ref_name": {"include": ["~ALL"], "exclude": ["refs/heads/main"]}},
+                "conditions": {
+                    "ref_name": {"include": ["~ALL"], "exclude": ["refs/heads/main"]}
+                },
                 "rules": [{"type": "required_status_checks"}],
             },
             "rulesets/2": {
                 "id": 2,
                 "target": "branch",
-                "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
+                "conditions": {
+                    "ref_name": {"include": ["refs/heads/main"], "exclude": []}
+                },
                 "rules": [],
             },
         }

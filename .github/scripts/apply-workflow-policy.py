@@ -40,13 +40,31 @@ def api(path: str, method: str = "GET", body: dict[str, Any] | None = None) -> A
     return json.loads(result.stdout) if result.stdout.strip() else None
 
 
+def match_segments(pattern: list[str], target: list[str]) -> bool:
+    """Match pathname components with recursive globstars, including zero levels."""
+    if not pattern:
+        return not target
+    if pattern[0] == "**":
+        return any(
+            match_segments(pattern[1:], target[index:])
+            for index in range(len(target) + 1)
+        )
+    return (
+        bool(target)
+        and fnmatchcase(target[0], pattern[0])
+        and match_segments(pattern[1:], target[1:])
+    )
+
+
 def applies_to_main(detail: dict[str, Any]) -> bool:
-    """Honor exclusions before selecting a supported main-branch ruleset."""
+    """Select only explicit main-only targets, preserving shared protections."""
     refs = detail.get("conditions", {}).get("ref_name", {})
-    aliases = ["refs/heads/main", "~DEFAULT_BRANCH", "~ALL"]
-    included = any(pattern in aliases for pattern in refs.get("include", []))
+    aliases = ["refs/heads/main", "~DEFAULT_BRANCH"]
+    includes = refs.get("include", [])
+    included = bool(includes) and all(pattern in aliases for pattern in includes)
     excluded = any(
-        pattern in aliases or fnmatchcase("refs/heads/main", pattern)
+        pattern in [*aliases, "~ALL"]
+        or match_segments(pattern.split("/"), ["refs", "heads", "main"])
         for pattern in refs.get("exclude", [])
     )
     return detail["target"] == "branch" and included and not excluded
@@ -57,7 +75,10 @@ def main_ruleset() -> dict[str, Any]:
     candidates = api("rulesets?includes_parents=true")
     rulesets = []
     for candidate in candidates:
-        if candidate["source_type"] != "Repository" or candidate["enforcement"] != "active":
+        if (
+            candidate["source_type"] != "Repository"
+            or candidate["enforcement"] != "active"
+        ):
             continue
         detail = api(f"rulesets/{candidate['id']}")
         if applies_to_main(detail):
@@ -88,11 +109,19 @@ def main() -> None:
     selected = main_ruleset()
     payload = {
         key: selected[key]
-        for key in ["name", "target", "enforcement", "conditions", "bypass_actors", "rules"]
+        for key in [
+            "name",
+            "target",
+            "enforcement",
+            "conditions",
+            "bypass_actors",
+            "rules",
+        ]
         if key in selected
     }
     rule = next(
-        (item for item in payload["rules"] if item["type"] == "required_status_checks"), None
+        (item for item in payload["rules"] if item["type"] == "required_status_checks"),
+        None,
     )
     if rule is None:
         rule = {"type": "required_status_checks", "parameters": {}}
@@ -101,12 +130,18 @@ def main() -> None:
         "strict_required_status_checks_policy": True,
         "do_not_enforce_on_create": False,
         "required_status_checks": [
-            {"context": name, "integration_id": 15368} for name in policy["required_checks"]
+            {"context": name, "integration_id": 15368}
+            for name in policy["required_checks"]
         ],
     }
     print(
         json.dumps(
-            {"repository": REPOSITORY, "ruleset_id": selected["id"], "payload": payload}, indent=2
+            {
+                "repository": REPOSITORY,
+                "ruleset_id": selected["id"],
+                "payload": payload,
+            },
+            indent=2,
         )
     )
     if not args.apply:
@@ -122,18 +157,25 @@ def main() -> None:
             "sha_pinning_required": True,
         },
     )
+    workflow_permissions = api("actions/permissions/workflow")
     api(
         "actions/permissions/workflow",
         "PUT",
         {
             "default_workflow_permissions": "read",
-            "can_approve_pull_request_reviews": True,
+            "can_approve_pull_request_reviews": workflow_permissions[
+                "can_approve_pull_request_reviews"
+            ],
         },
     )
     api(
         "",
         "PATCH",
-        {"allow_auto_merge": True, "delete_branch_on_merge": True, "allow_update_branch": True},
+        {
+            "allow_auto_merge": True,
+            "delete_branch_on_merge": True,
+            "allow_update_branch": True,
+        },
     )
     api("automated-security-fixes", "PUT")
     for workflow in ["coderabbit-after-checks.yml", "dependabot-auto-merge.yml"]:
