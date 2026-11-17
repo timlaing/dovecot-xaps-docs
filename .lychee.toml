@@ -1,0 +1,4 @@
+# Verify GitHub file links against the same file on the raw-content endpoint.
+# GitHub's HTML blob pages intermittently return 503 to hosted link checkers.
+# Missing files and all other HTTP errors still fail validation.
+remap = ['^https://github\.com/([^/]+)/([^/]+)/blob/(.*)$ https://raw.githubusercontent.com/$1/$2/$3']
