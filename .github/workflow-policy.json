@@ -1,0 +1,20 @@
+{
+  "default_workflow_permissions": "read",
+  "required_checks": [
+    "Validate docs",
+    "Validate lint",
+    "Validate links",
+    "Validate codeql",
+    "Workflow policy",
+    "Review passed"
+  ],
+  "review_gate_requires_main": true,
+  "sha_pinning_required": true,
+  "validation_checks": [
+    "Validate docs",
+    "Validate lint",
+    "Validate links",
+    "Validate codeql",
+    "Workflow policy"
+  ]
+}
