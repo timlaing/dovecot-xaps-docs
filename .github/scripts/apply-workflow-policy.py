@@ -7,11 +7,13 @@ import base64
 import json
 import shutil
 import subprocess
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
 
 REPOSITORY = "timlaing/dovecot-xaps-docs"
 POLICY_PATH = ".github/workflow-policy.json"
+ACTIONS_PERMISSIONS = "actions/permissions"
 
 
 def api(path: str, method: str = "GET", body: dict[str, Any] | None = None) -> Any:
@@ -28,7 +30,7 @@ def api(path: str, method: str = "GET", body: dict[str, Any] | None = None) -> A
     ]
     if body is not None:
         command += ["--input", "-"]
-    result = subprocess.run(
+    result = subprocess.run(  # noqa: S603
         command,
         input=json.dumps(body) if body is not None else None,
         capture_output=True,
@@ -38,21 +40,27 @@ def api(path: str, method: str = "GET", body: dict[str, Any] | None = None) -> A
     return json.loads(result.stdout) if result.stdout.strip() else None
 
 
+def applies_to_main(detail: dict[str, Any]) -> bool:
+    """Honor exclusions before selecting a supported main-branch ruleset."""
+    refs = detail.get("conditions", {}).get("ref_name", {})
+    aliases = ["refs/heads/main", "~DEFAULT_BRANCH", "~ALL"]
+    included = any(pattern in aliases for pattern in refs.get("include", []))
+    excluded = any(
+        pattern in aliases or fnmatchcase("refs/heads/main", pattern)
+        for pattern in refs.get("exclude", [])
+    )
+    return detail["target"] == "branch" and included and not excluded
+
+
 def main_ruleset() -> dict[str, Any]:
     """Find the active main policy while preserving all unrelated protections."""
     candidates = api("rulesets?includes_parents=true")
     rulesets = []
     for candidate in candidates:
-        if (
-            candidate["source_type"] != "Repository"
-            or candidate["enforcement"] != "active"
-        ):
+        if candidate["source_type"] != "Repository" or candidate["enforcement"] != "active":
             continue
         detail = api(f"rulesets/{candidate['id']}")
-        includes = detail.get("conditions", {}).get("ref_name", {}).get("include", [])
-        if detail["target"] == "branch" and any(
-            item in includes for item in ["refs/heads/main", "~DEFAULT_BRANCH", "~ALL"]
-        ):
+        if applies_to_main(detail):
             rulesets.append(detail)
     if not rulesets:
         raise SystemExit("No active main-branch ruleset; review protection manually")
@@ -80,19 +88,11 @@ def main() -> None:
     selected = main_ruleset()
     payload = {
         key: selected[key]
-        for key in [
-            "name",
-            "target",
-            "enforcement",
-            "conditions",
-            "bypass_actors",
-            "rules",
-        ]
+        for key in ["name", "target", "enforcement", "conditions", "bypass_actors", "rules"]
         if key in selected
     }
     rule = next(
-        (item for item in payload["rules"] if item["type"] == "required_status_checks"),
-        None,
+        (item for item in payload["rules"] if item["type"] == "required_status_checks"), None
     )
     if rule is None:
         rule = {"type": "required_status_checks", "parameters": {}}
@@ -101,26 +101,20 @@ def main() -> None:
         "strict_required_status_checks_policy": True,
         "do_not_enforce_on_create": False,
         "required_status_checks": [
-            {"context": name, "integration_id": 15368}
-            for name in policy["required_checks"]
+            {"context": name, "integration_id": 15368} for name in policy["required_checks"]
         ],
     }
     print(
         json.dumps(
-            {
-                "repository": REPOSITORY,
-                "ruleset_id": selected["id"],
-                "payload": payload,
-            },
-            indent=2,
+            {"repository": REPOSITORY, "ruleset_id": selected["id"], "payload": payload}, indent=2
         )
     )
     if not args.apply:
         return
     api(f"rulesets/{selected['id']}", "PUT", payload)
-    current = api("actions/permissions")
+    current = api(ACTIONS_PERMISSIONS)
     api(
-        "actions/permissions",
+        ACTIONS_PERMISSIONS,
         "PUT",
         {
             "enabled": current["enabled"],
@@ -139,11 +133,7 @@ def main() -> None:
     api(
         "",
         "PATCH",
-        {
-            "allow_auto_merge": True,
-            "delete_branch_on_merge": True,
-            "allow_update_branch": True,
-        },
+        {"allow_auto_merge": True, "delete_branch_on_merge": True, "allow_update_branch": True},
     )
     api("automated-security-fixes", "PUT")
     for workflow in ["coderabbit-after-checks.yml", "dependabot-auto-merge.yml"]:
@@ -154,7 +144,7 @@ def main() -> None:
     )
     if actual_checks != rule:
         raise SystemExit("Required checks did not match after update")
-    if not api("actions/permissions")["sha_pinning_required"]:
+    if not api(ACTIONS_PERMISSIONS)["sha_pinning_required"]:
         raise SystemExit("SHA enforcement did not activate")
     print("Workflow policy applied and required checks verified")
 
