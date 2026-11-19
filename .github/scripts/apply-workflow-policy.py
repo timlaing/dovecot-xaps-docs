@@ -5,13 +5,16 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import re
 import shutil
 import subprocess
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
 
 REPOSITORY = "timlaing/dovecot-xaps-docs"
 POLICY_PATH = ".github/workflow-policy.json"
+ACTIONS_PERMISSIONS = "actions/permissions"
 
 
 def api(path: str, method: str = "GET", body: dict[str, Any] | None = None) -> Any:
@@ -38,8 +41,41 @@ def api(path: str, method: str = "GET", body: dict[str, Any] | None = None) -> A
     return json.loads(result.stdout) if result.stdout.strip() else None
 
 
+def match_segments(pattern: list[str], target: list[str]) -> bool:
+    """Match pathname components with recursive wildcards, including zero levels."""
+    if not pattern:
+        return not target
+    if pattern[0] == "**":
+        return any(
+            match_segments(pattern[1:], target[index:])
+            for index in range(len(target) + 1)
+        )
+    return (
+        bool(target)
+        and fnmatchcase(target[0], pattern[0])
+        and match_segments(pattern[1:], target[1:])
+    )
+
+
+def applies_to_main(detail: dict[str, Any], default_branch: str = "main") -> bool:
+    """Select only explicit main-only targets, preserving shared protections."""
+    refs = detail.get("conditions", {}).get("ref_name", {})
+    aliases = ["refs/heads/main"]
+    if default_branch == "main":
+        aliases.append("~DEFAULT_BRANCH")
+    includes = refs.get("include", [])
+    included = bool(includes) and all(pattern in aliases for pattern in includes)
+    excluded = any(
+        pattern in [*aliases, "~ALL"]
+        or match_segments(pattern.split("/"), ["refs", "heads", "main"])
+        for pattern in refs.get("exclude", [])
+    )
+    return detail["target"] == "branch" and included and not excluded
+
+
 def main_ruleset() -> dict[str, Any]:
     """Find the active main policy while preserving all unrelated protections."""
+    default_branch = api("")["default_branch"]
     candidates = api("rulesets?includes_parents=true")
     rulesets = []
     for candidate in candidates:
@@ -49,10 +85,7 @@ def main_ruleset() -> dict[str, Any]:
         ):
             continue
         detail = api(f"rulesets/{candidate['id']}")
-        includes = detail.get("conditions", {}).get("ref_name", {}).get("include", [])
-        if detail["target"] == "branch" and any(
-            item in includes for item in ["refs/heads/main", "~DEFAULT_BRANCH", "~ALL"]
-        ):
+        if applies_to_main(detail, default_branch):
             rulesets.append(detail)
     if not rulesets:
         raise SystemExit("No active main-branch ruleset; review protection manually")
@@ -66,18 +99,71 @@ def main_ruleset() -> dict[str, Any]:
     )
 
 
+def reported_checks(
+    reported: dict[str, Any], statuses: list[dict[str, Any]]
+) -> dict[str, bool]:
+    """Read current results only from the expected producer and result type."""
+    checks = {}
+    for item in sorted(reported["check_runs"], key=lambda item: item["id"]):
+        if item.get("app", {}).get("slug") == "github-actions" and item["name"] not in {
+            "Review passed",
+            "Review notifier policy",
+            "Quality",
+            "Analysis passed",
+        }:
+            checks[item["name"]] = (
+                item["status"] == "completed" and item["conclusion"] == "success"
+            )
+    for item in sorted(statuses, key=lambda item: item["id"]):
+        if item.get("creator", {}).get("login") == "github-actions[bot]" and item[
+            "context"
+        ] in {"Review passed", "Review notifier policy", "Quality", "Analysis passed"}:
+            checks[item["context"]] = item["state"] == "success"
+    return checks
+
+
+def validate_hosted_checks(policy: dict[str, Any], revision: str | None) -> None:
+    """Require real replacement checks on the reviewed PR revision before activation."""
+    if not policy["required_checks"]:
+        raise SystemExit("Required check policy is empty")
+    if revision is None or re.fullmatch(r"[a-f0-9]{40}", revision) is None:
+        raise SystemExit("Provide --validated-head with the hosted PR head SHA")
+    evidence = api(f"contents/{POLICY_PATH}?ref={revision}")
+    if json.loads(base64.b64decode(evidence["content"])) != policy:
+        raise SystemExit("Hosted evidence must use the reviewed workflow policy")
+    reported = api(f"commits/{revision}/check-runs?filter=latest&per_page=100")
+    statuses = api(f"commits/{revision}/statuses?per_page=100")
+    if reported["total_count"] > 100 or len(statuses) == 100:
+        raise SystemExit("Hosted evidence requires pagination; inspect before applying")
+    checks = reported_checks(reported, statuses)
+    if not all(checks.get(name, False) for name in policy["required_checks"]):
+        raise SystemExit(
+            "Replacement checks have not succeeded on the hosted PR revision"
+        )
+
+
 def main() -> None:
     """Plan changes, or apply them after verifying the policy on main."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument(
+        "--validated-head",
+        help="Exact hosted PR revision proving the replacement checks",
+    )
     args = parser.parse_args()
     policy = json.loads(Path(POLICY_PATH).read_text(encoding="utf-8"))
+    if args.apply and (
+        args.validated_head is None
+        or re.fullmatch(r"[a-f0-9]{40}", args.validated_head) is None
+    ):
+        raise SystemExit("Provide --validated-head with the hosted PR head SHA")
     if args.apply:
         remote = api(f"contents/{POLICY_PATH}?ref=main")
         deployed = json.loads(base64.b64decode(remote["content"]))
         if deployed != policy:
             raise SystemExit("The reviewed policy must be merged into main first")
     selected = main_ruleset()
+    original = json.loads(json.dumps(selected))
     payload = {
         key: selected[key]
         for key in [
@@ -117,10 +203,23 @@ def main() -> None:
     )
     if not args.apply:
         return
+    for workflow in [
+        "coderabbit-after-checks.yml",
+        "dependabot-auto-merge.yml",
+        "review-events.yml",
+        "review-notifier-policy.yml",
+    ]:
+        api(f"actions/workflows/{workflow}/enable", "PUT")
+    validate_hosted_checks(policy, args.validated_head)
+    latest = api(f"rulesets/{selected['id']}")
+    if any(latest.get(key) != original.get(key) for key in payload):
+        raise SystemExit(
+            "Ruleset changed during validation; serialise settings changes and retry"
+        )
     api(f"rulesets/{selected['id']}", "PUT", payload)
-    current = api("actions/permissions")
+    current = api(ACTIONS_PERMISSIONS)
     api(
-        "actions/permissions",
+        ACTIONS_PERMISSIONS,
         "PUT",
         {
             "enabled": current["enabled"],
@@ -128,12 +227,15 @@ def main() -> None:
             "sha_pinning_required": True,
         },
     )
+    workflow_permissions = api("actions/permissions/workflow")
     api(
         "actions/permissions/workflow",
         "PUT",
         {
             "default_workflow_permissions": "read",
-            "can_approve_pull_request_reviews": True,
+            "can_approve_pull_request_reviews": workflow_permissions[
+                "can_approve_pull_request_reviews"
+            ],
         },
     )
     api(
@@ -146,15 +248,13 @@ def main() -> None:
         },
     )
     api("automated-security-fixes", "PUT")
-    for workflow in ["coderabbit-after-checks.yml", "dependabot-auto-merge.yml"]:
-        api(f"actions/workflows/{workflow}/enable", "PUT")
     actual = api(f"rulesets/{selected['id']}")
     actual_checks = next(
         item for item in actual["rules"] if item["type"] == "required_status_checks"
     )
     if actual_checks != rule:
         raise SystemExit("Required checks did not match after update")
-    if not api("actions/permissions")["sha_pinning_required"]:
+    if not api(ACTIONS_PERMISSIONS)["sha_pinning_required"]:
         raise SystemExit("SHA enforcement did not activate")
     print("Workflow policy applied and required checks verified")
 

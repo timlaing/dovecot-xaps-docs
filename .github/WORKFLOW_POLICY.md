@@ -12,4 +12,24 @@ The `workflow_run` coordinator and scanner use the default-branch workflow. The 
 
 ## Apply the matching repository policy
 
-After merging, run `python3 .github/scripts/apply-workflow-policy.py` to inspect the exact ruleset change, then run it with `--apply`. The script refuses to apply an unmerged policy, preserves unrelated rules and bypass actors, binds checks to GitHub Actions, enables SHA enforcement and the replacement automation, and verifies the result. Repository settings shared with the existing workflows can be corrected before merge; new check names and action enforcement must wait for their producing workflows.
+After merging, run `python3 .github/scripts/apply-workflow-policy.py` to inspect the exact ruleset change, then run it with `--apply --validated-head <full-PR-head-SHA>`. The script refuses to apply an unmerged policy, preserves unrelated rules and bypass actors, binds checks to GitHub Actions, enables SHA enforcement and the replacement automation, and verifies the result. Repository settings shared with the existing workflows can be corrected before merge; new check names and action enforcement must wait for their producing workflows.
+
+## Explicit review requester
+
+For unattended explicit CodeRabbit requests, configure `REVIEW_REQUEST_TOKEN` as a dedicated maintainer-owned fine-grained token with Issues write, Pull requests read and Metadata read, limited to this repository. The trusted metadata-only coordinator uses that client only to identify the requester and post the fixed review command. Its normal GitHub Actions client retains check/status duties and has no PR/issue write permission. The workflow does not check out repository code. Request markers are deduplicated per authenticated requester and revision.
+
+Without the secret, automatic reviews are disabled to preserve validation ordering; a maintainer must request review after checks pass. The gate never treats a missing request credential as approval. Rotate the token before expiry.
+
+The migration accepts only an explicit main-only ruleset; shared or wildcard branch targets require a separate main policy. Review event notifications contain no checkout or credentials and trigger trusted re-evaluation of readiness and revoked approvals. Polling is bounded to 45 one-minute attempts.
+
+Review command markers are deduplicated per requester, revision and run attempt. A requester may post at most three requests for one revision. Once exhausted, a maintainer requests review manually; after current-head CodeRabbit approval arrives, rerunning the coordinator can pass. A new revision resets the count.
+
+The required `Review notifier policy` commit status is written by a checkout-free `pull_request_target` worker from the default branch. It checks the complete notification structure, regular Git file modes, and the trusted enforcement/receiver files as data. Pinned action updates must belong to the official action repository. Changes to security-policy logic need a maintainer-reviewed trusted baseline update; the PR cannot rewrite its own automatic validator. The coordinator requires the actual status, so a same-named PR check cannot replace it.
+
+### Trusted notifier bootstrap and recovery
+
+After the harmless PR registration job has registered the workflow, the repository owner must inspect the exact workflow revision and dispatch `review-notifier-policy.yml` on the reviewed PR branch with `revision` set to the full current head SHA. Wait for its successful `Review notifier policy` status before dispatching the coordinator. This initial dispatch is an explicit owner attestation of the reviewed baseline; arbitrary writers are not authorized to attest a feature-branch validator. Normal validation uses the default-branch `pull_request_target` workflow. A status from another workflow, revision, failed run or untrusted feature-branch actor must not satisfy this gate.
+
+Settings activation enables replacement workflows first, then verifies successful hosted replacement checks on the explicit reviewed PR head before writing required-check rules. Keep existing protection until that proof exists; failed enablement or missing proof leaves the rules unchanged.
+
+During activation, serialize repository-settings changes: run one activation at a time and do not edit rulesets concurrently. The updater re-reads protections immediately before writing and aborts if they changed during hosted validation.
